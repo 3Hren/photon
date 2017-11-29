@@ -3,6 +3,7 @@
 //extern crate serde_json;
 extern crate image;
 
+use std::f64;
 use std::fs::File;
 use std::time::SystemTime;
 
@@ -10,10 +11,11 @@ use image::{ImageBuffer, ImageRgb8, Pixel, Rgb};
 
 type Point = Vec3<f64>;
 
-mod model;
+mod geometry;
 mod ray;
 mod vec3;
 
+use geometry::{Geometry, Model};
 use ray::Ray;
 use vec3::Vec3;
 
@@ -36,11 +38,6 @@ pub struct Material {
     reflective: f64,
 }
 
-trait Model {
-    fn material(&self) -> &Material;
-    fn intersection(&self, ray: &Ray<f64>) -> Option<Intersection>;
-}
-
 ///
 ///
 /// A plane can be defined as a point representing how far the plane is from the world origin and a
@@ -49,15 +46,9 @@ trait Model {
 struct Plane {
     point: Vec3<f64>,
     normal: Vec3<f64>,
-
-    material: Material,
 }
 
-impl Model for Plane {
-    fn material(&self) -> &Material {
-        &self.material
-    }
-
+impl Geometry for Plane {
     fn intersection(&self, ray: &Ray<f64>) -> Option<Intersection> {
         let denominator = self.normal.dot(ray.direction());
 
@@ -75,15 +66,9 @@ impl Model for Plane {
 struct Sphere {
     center: Point,
     radius: f64,
-
-    material: Material,
 }
 
-impl Model for Sphere {
-    fn material(&self) -> &Material {
-        &self.material
-    }
-
+impl Geometry for Sphere {
     fn intersection(&self, ray: &Ray<f64>) -> Option<Intersection> {
         let oc = ray.origin() - self.center;
 
@@ -145,7 +130,7 @@ impl Light for PointLight {
 #[derive()]
 struct Scene {
     lights: Vec<Box<Light>>,
-    objects: Vec<Box<Model>>,
+    objects: Vec<Model<Box<Geometry>>>,
 
     background: Rgb<u8>,
 }
@@ -171,9 +156,9 @@ impl Scene {
         self.closest_intersection(ray).map(|(m, i)| {
             let intensity = self.lightning(&i);
 
-            let reflective = m.material().reflective;
+            let reflective = m.material.reflective;
 
-            let color = m.material().color.map(|c| {
+            let color = m.material.color.map(|c| {
                 let color = c as f64 * intensity;
 
                 if color > 255.0 {
@@ -202,15 +187,15 @@ impl Scene {
         }).unwrap_or(self.background)
     }
 
-    fn closest_intersection(&self, ray: &Ray<f64>) -> Option<(&Model, Intersection)> {
-        let mut t = 1.0e32;
+    fn closest_intersection(&self, ray: &Ray<f64>) -> Option<(&Model<Box<Geometry>>, Intersection)> {
+        let mut t = f64::INFINITY;
         let mut closest = None;
 
-        for object in &self.objects {
-            if let Some(intersection) = object.intersection(ray) {
+        for model in &self.objects {
+            if let Some(intersection) = model.geometry.intersection(ray) {
                 if intersection.t < t && ray.contains(intersection.t) {
                     t = intersection.t;
-                    closest = Some((object.as_ref(), intersection));
+                    closest = Some((model, intersection));
                 }
             }
         }
@@ -250,46 +235,57 @@ fn main() {
 
     let mut scene = Scene::new(Rgb([30, 30, 30]));
 
-    scene.objects.push(Box::new(Plane {
-        point: Point::new(0.0, -1.0, 0.0),
-        normal: Vec3::new(0.0, 1.0, 0.0).unit(),
+    scene.objects.push(Model {
+        geometry: Box::new(Plane {
+            point: Point::new(0.0, -1.0, 0.0),
+            normal: Vec3::new(0.0, 1.0, 0.0).unit(),
+        }),
         material: Material {
             color: Rgb([127, 127, 127]),
             reflective: 0.05,
         },
-    }));
-    scene.objects.push(Box::new(Sphere {
-        center: Point::new(0.0, 0.0, 10.0),
-        radius: 1.0,
+    });
+
+    scene.objects.push(Model {
+        geometry: Box::new(Sphere {
+            center: Point::new(0.0, 0.0, 10.0),
+            radius: 1.0,
+        }),
         material: Material {
             color: Rgb([255, 140, 0]),
             reflective: 0.0,
         },
-    }));
-    scene.objects.push(Box::new(Sphere {
-        center: Point::new(0.0, -1.0, 3.0),
-        radius: 1.0,
+    });
+    scene.objects.push(Model {
+        geometry: Box::new(Sphere {
+            center: Point::new(0.0, -1.0, 3.0),
+            radius: 1.0,
+        }),
         material: Material {
             color: Rgb([255, 99, 71]),
             reflective: 0.5,
         },
-    }));
-    scene.objects.push(Box::new(Sphere {
-        center: Point::new(2.0, 0.0, 4.0),
-        radius: 1.0,
+    });
+    scene.objects.push(Model {
+        geometry: Box::new(Sphere {
+            center: Point::new(2.0, 0.0, 4.0),
+            radius: 1.0,
+        }),
         material: Material {
             color: Rgb([85, 107, 47]),
             reflective: 0.2,
         },
-    }));
-    scene.objects.push(Box::new(Sphere {
-        center: Point::new(-2.0, 0.0, 4.0),
-        radius: 1.0,
+    });
+    scene.objects.push(Model {
+        geometry: Box::new(Sphere {
+            center: Point::new(-2.0, 0.0, 4.0),
+            radius: 1.0,
+        }),
         material: Material {
             color: Rgb([135, 206, 250]),
             reflective: 0.9,
         },
-    }));
+    });
 
     let lights = 10;
     for id in 0..lights {
