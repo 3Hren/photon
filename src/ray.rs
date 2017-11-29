@@ -23,6 +23,11 @@ impl Ray<f64> {
     pub fn direction(&self) -> &Vec3<f64> {
         &self.direction
     }
+
+    #[inline]
+    pub fn offset(&self, t: f64) -> Vec3<f64> {
+        self.origin + self.direction.scale(t)
+    }
 }
 
 impl<T: PartialOrd> Ray<T> {

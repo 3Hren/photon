@@ -15,7 +15,7 @@ mod geometry;
 mod ray;
 mod vec3;
 
-use geometry::{Geometry, Model};
+use geometry::{Geometry, Mesh, Model, Triangle};
 use ray::Ray;
 use vec3::Vec3;
 
@@ -127,11 +127,11 @@ impl Light for PointLight {
     }
 }
 
-#[derive()]
 struct Scene {
     lights: Vec<Box<Light>>,
     objects: Vec<Model<Box<Geometry>>>,
 
+    depth: u16,
     background: Rgb<u8>,
 }
 
@@ -140,6 +140,7 @@ impl Scene {
         Self {
             lights: Vec::new(),
             objects: Vec::new(),
+            depth: 1,
             background,
         }
     }
@@ -149,7 +150,7 @@ impl Scene {
 //    }
 
     pub fn trace(&self, ray: &Ray<f64>) -> Rgb<u8> {
-        self.trace_limited(ray, 5)
+        self.trace_limited(ray, self.depth)
     }
 
     fn trace_limited(&self, ray: &Ray<f64>, depth: u16) -> Rgb<u8> {
@@ -233,6 +234,8 @@ fn main() {
 
     let viewport = Viewport { width: 1.0, height: 1.0 };
 
+    let mesh = Mesh::load("teapot.obj.txt").unwrap();
+
     let mut scene = Scene::new(Rgb([30, 30, 30]));
 
     scene.objects.push(Model {
@@ -242,9 +245,19 @@ fn main() {
         }),
         material: Material {
             color: Rgb([127, 127, 127]),
-            reflective: 0.05,
+            reflective: 0.0,
         },
     });
+
+    for t in mesh.triangles {
+        scene.objects.push(Model {
+            geometry: Box::new(t),
+            material: Material {
+                color: Rgb([127, 127, 127]),
+                reflective: 0.2,
+            },
+        });
+    }
 
     scene.objects.push(Model {
         geometry: Box::new(Sphere {
@@ -287,7 +300,7 @@ fn main() {
         },
     });
 
-    let lights = 10;
+    let lights = 1;
     for id in 0..lights {
         let phi = 6.2830 * id as f64 / lights as f64;
         let radius = 0.5;
@@ -297,11 +310,14 @@ fn main() {
         }));
     }
 
-    let origin = Point::new(0.0, 0.0, -1.0);
+    let origin = Point::new(0.0, 0.0, -2.0);
 
     let now = SystemTime::now();
-    for (x, y, pixel) in buf.enumerate_pixels_mut() {
-        let sx = width as f64 / 2.0 - x as f64;
+    println!("Start rendering ...");
+    println!("  - models: {}", scene.objects.len());
+    println!("  - lights: {}", scene.lights.len());
+    for (n, (x, y, pixel)) in buf.enumerate_pixels_mut().enumerate() {
+        let sx = x as f64 + width as f64 / -2.0;
         let sy = height as f64 / 2.0 - y as f64;
 
         let vx = sx * viewport.width / width as f64;
@@ -311,10 +327,13 @@ fn main() {
         let ray = Ray::new(origin, Vec3::new(vx, vy, vz), 1.0..1.0e20);
 
         *pixel = scene.trace(&ray);
+        if n as u32 % ((width * height) / 100) == 0 {
+            println!("Progress: {}%", n as u32 / ((width * height) / 100));
+        }
     }
 
     let elapsed = now.elapsed().unwrap();
-    println!("elapsed: {} ms", (elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 * 1e-9) * 1e3);
+    println!("Finished, elapsed: {} ms", (elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 * 1e-9) * 1e3);
     let file = &mut File::create("photon.png").unwrap();
 
     ImageRgb8(buf).save(file, image::PNG).unwrap();
