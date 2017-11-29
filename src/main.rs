@@ -3,15 +3,14 @@
 //extern crate serde_json;
 extern crate image;
 
-use std::cmp;
 use std::fs::File;
-use std::path::Path;
 use std::time::SystemTime;
 
 use image::{ImageBuffer, ImageRgb8, Pixel, Rgb};
 
 type Point = Vec3<f64>;
 
+mod model;
 mod ray;
 mod vec3;
 
@@ -32,7 +31,7 @@ impl Intersection {
 }
 
 #[derive(Copy, Clone, Debug)]
-struct Material {
+pub struct Material {
     color: Rgb<u8>,
     reflective: f64,
 }
@@ -143,26 +142,32 @@ impl Light for PointLight {
     }
 }
 
-#[derive(Default)]
+#[derive()]
 struct Scene {
     lights: Vec<Box<Light>>,
     objects: Vec<Box<Model>>,
+
+    background: Rgb<u8>,
 }
 
 impl Scene {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(background: Rgb<u8>) -> Self {
+        Self {
+            lights: Vec::new(),
+            objects: Vec::new(),
+            background,
+        }
     }
 
 //    pub fn load<P: AsRef<Path>>(path: &P) -> Result<Self, Box<Error>> {
 //        unimplemented!()
 //    }
 
-    pub fn trace(&self, ray: &Ray<f64>) -> Option<Rgb<u8>> {
+    pub fn trace(&self, ray: &Ray<f64>) -> Rgb<u8> {
         self.trace_limited(ray, 5)
     }
 
-    fn trace_limited(&self, ray: &Ray<f64>, depth: u16) -> Option<Rgb<u8>> {
+    fn trace_limited(&self, ray: &Ray<f64>, depth: u16) -> Rgb<u8> {
         self.closest_intersection(ray).map(|(m, i)| {
             let intensity = self.lightning(&i);
 
@@ -187,14 +192,14 @@ impl Scene {
 
             let direction = n.scale(2.0 * n.dot(&d)) - d;
             let ray = Ray::new(i.point, direction, 1.0e-6..1.0e20);
-            let reflected_color = self.trace_limited(&ray, depth - 1).unwrap_or(Rgb([30, 30, 30]));
+            let reflected_color = self.trace_limited(&ray, depth - 1);
 
             let cr = color.map(|c| (c as f64 * (1.0 - reflective)) as u8);
             let cl = reflected_color.map(|c| (c as f64 * reflective) as u8);
 
 
             Rgb([cr[0] + cl[0], cr[1] + cl[1], cr[2] + cl[2]])
-        })
+        }).unwrap_or(self.background)
     }
 
     fn closest_intersection(&self, ray: &Ray<f64>) -> Option<(&Model, Intersection)> {
@@ -243,7 +248,8 @@ fn main() {
 
     let viewport = Viewport { width: 1.0, height: 1.0 };
 
-    let mut scene = Scene::new();
+    let mut scene = Scene::new(Rgb([30, 30, 30]));
+
     scene.objects.push(Box::new(Plane {
         point: Point::new(0.0, -1.0, 0.0),
         normal: Vec3::new(0.0, 1.0, 0.0).unit(),
@@ -308,8 +314,7 @@ fn main() {
 
         let ray = Ray::new(origin, Vec3::new(vx, vy, vz), 1.0..1.0e20);
 
-        let color = scene.trace(&ray).unwrap_or(Rgb([30, 30, 30]));
-        *pixel = color;
+        *pixel = scene.trace(&ray);
     }
 
     let elapsed = now.elapsed().unwrap();
