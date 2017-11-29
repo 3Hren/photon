@@ -1,11 +1,14 @@
 #![feature(range_contains)]
 
-//extern crate serde_json;
 extern crate image;
+extern crate rayon;
+extern crate serde_json;
 
 use std::f64;
 use std::fs::File;
 use std::time::SystemTime;
+
+use rayon::prelude::*;
 
 use image::{ImageBuffer, ImageRgb8, Pixel, Rgb};
 
@@ -128,8 +131,8 @@ impl Light for PointLight {
 }
 
 struct Scene {
-    lights: Vec<Box<Light>>,
-    objects: Vec<Model<Box<Geometry>>>,
+    lights: Vec<Box<Light + Sync>>,
+    objects: Vec<Model<Box<Geometry + Sync>>>,
 
     depth: u16,
     background: Rgb<u8>,
@@ -188,7 +191,7 @@ impl Scene {
         }).unwrap_or(self.background)
     }
 
-    fn closest_intersection(&self, ray: &Ray<f64>) -> Option<(&Model<Box<Geometry>>, Intersection)> {
+    fn closest_intersection(&self, ray: &Ray<f64>) -> Option<(&Model<Box<Geometry + Sync>>, Intersection)> {
         let mut t = f64::INFINITY;
         let mut closest = None;
 
@@ -230,11 +233,7 @@ fn main() {
     let width = 800;
     let height = 800;
 
-    let mut buf = ImageBuffer::new(width, height);
-
     let viewport = Viewport { width: 1.0, height: 1.0 };
-
-    let mesh = Mesh::load("teapot.obj.txt").unwrap();
 
     let mut scene = Scene::new(Rgb([30, 30, 30]));
 
@@ -249,15 +248,16 @@ fn main() {
         },
     });
 
-    for t in mesh.triangles {
-        scene.objects.push(Model {
-            geometry: Box::new(t),
-            material: Material {
-                color: Rgb([127, 127, 127]),
-                reflective: 0.2,
-            },
-        });
-    }
+//    let mesh = Mesh::load("teapot.obj.txt").unwrap();
+//    for t in mesh.triangles {
+//        scene.objects.push(Model {
+//            geometry: Box::new(t),
+//            material: Material {
+//                color: Rgb([127, 127, 127]),
+//                reflective: 0.2,
+//            },
+//        });
+//    }
 
     scene.objects.push(Model {
         geometry: Box::new(Sphere {
@@ -310,13 +310,17 @@ fn main() {
         }));
     }
 
-    let origin = Point::new(0.0, 0.0, -2.0);
+    let origin = Point::new(0.0, 0.0, -4.0);
 
     let now = SystemTime::now();
     println!("Start rendering ...");
     println!("  - models: {}", scene.objects.len());
     println!("  - lights: {}", scene.lights.len());
-    for (n, (x, y, pixel)) in buf.enumerate_pixels_mut().enumerate() {
+
+    let pixels: Vec<Rgb<u8>> = (0..width * height).into_par_iter().map(|n| {
+        let x = n % width;
+        let y = n / width;
+
         let sx = x as f64 + width as f64 / -2.0;
         let sy = height as f64 / 2.0 - y as f64;
 
@@ -326,14 +330,19 @@ fn main() {
 
         let ray = Ray::new(origin, Vec3::new(vx, vy, vz), 1.0..1.0e20);
 
-        *pixel = scene.trace(&ray);
-        if n as u32 % ((width * height) / 100) == 0 {
-            println!("Progress: {}%", n as u32 / ((width * height) / 100));
-        }
-    }
+        let color = scene.trace(&ray);
+
+        color
+    }).collect();
+
+
+    let mut buf = ImageBuffer::new(width, height);
+    for (x, y, pixel) in buf.enumerate_pixels_mut() {
+        *pixel = pixels[(y * width + x) as usize];
+    };
 
     let elapsed = now.elapsed().unwrap();
-    println!("Finished, elapsed: {} ms", (elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 * 1e-9) * 1e3);
+    println!("Finished, elapsed: {:.3} ms", (elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 * 1e-9) * 1e3);
     let file = &mut File::create("photon.png").unwrap();
 
     ImageRgb8(buf).save(file, image::PNG).unwrap();
