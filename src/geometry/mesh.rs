@@ -156,3 +156,21 @@ impl Mesh {
         Ok(mesh)
     }
 }
+
+impl Geometry for Mesh {
+    fn intersection(&self, ray: &Ray<f64>) -> Option<Intersection> {
+        let mut t = f64::INFINITY;
+        let mut closest = None;
+
+        for triangle in &self.triangles {
+            if let Some(intersection) = triangle.intersection(ray) {
+                if intersection.t < t && ray.contains(intersection.t) {
+                    t = intersection.t;
+                    closest = Some(intersection);
+                }
+            }
+        }
+
+        closest
+    }
+}

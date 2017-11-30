@@ -182,6 +182,10 @@ impl Scene {
                     let plane: Plane = Deserialize::deserialize(geometry)?;
                     Box::new(plane) as Box<Geometry + Sync>
                 }
+                Some("mesh") => {
+                    let mesh = Mesh::load(geometry["path"].as_str().unwrap())?;
+                    Box::new(mesh) as Box<Geometry + Sync>
+                }
                 Some(..) => {
                     unimplemented!()
                 }
@@ -276,23 +280,12 @@ struct Viewport {
 }
 
 fn main() {
-    let width = 800;
-    let height = 800;
+    let width = 1600;
+    let height = 1600;
 
     let viewport = Viewport { width: 1.0, height: 1.0 };
 
     let mut scene = Scene::load(&"scene.json").unwrap();
-
-//    let mesh = Mesh::load("teapot.obj.txt").unwrap();
-//    for t in mesh.triangles {
-//        scene.objects.push(Model {
-//            geometry: Box::new(t),
-//            material: Material {
-//                color: Rgb([127, 127, 127]),
-//                reflective: 0.2,
-//            },
-//        });
-//    }
 
     let lights = 1;
     for id in 0..lights {

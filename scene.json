@@ -100,6 +100,20 @@
                     ],
                     "reflective": 0.0
                 }
+            },
+            {
+                "geometry": {
+                    "type": "mesh",
+                    "path": "teapot.obj.txt"
+                },
+                "material": {
+                    "color": [
+                        255,
+                        99,
+                        71
+                    ],
+                    "reflective": 0.5
+                }
             }
         ]
     }
