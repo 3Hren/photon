@@ -2,13 +2,20 @@
 
 extern crate image;
 extern crate rayon;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate serde_json;
 
+use std::error::Error;
 use std::f64;
 use std::fs::File;
+use std::path::Path;
 use std::time::SystemTime;
 
 use rayon::prelude::*;
+
+use serde::{Deserialize, Deserializer};
 
 use image::{ImageBuffer, ImageRgb8, Pixel, Rgb};
 
@@ -35,8 +42,18 @@ impl Intersection {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+fn deserialize_rgb<'de, D>(de: D) -> Result<Rgb<u8>, D::Error>
+    where D: Deserializer<'de>
+{
+    let (r, g, b) = Deserialize::deserialize(de)?;
+    let rgb = Rgb([r, g, b]);
+
+    Ok(rgb)
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub struct Material {
+    #[serde(deserialize_with = "deserialize_rgb")]
     color: Rgb<u8>,
     reflective: f64,
 }
@@ -45,7 +62,7 @@ pub struct Material {
 ///
 /// A plane can be defined as a point representing how far the plane is from the world origin and a
 /// normal (defining the orientation of the plane).
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 struct Plane {
     point: Vec3<f64>,
     normal: Vec3<f64>,
@@ -65,7 +82,7 @@ impl Geometry for Plane {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 struct Sphere {
     center: Point,
     radius: f64,
@@ -148,9 +165,38 @@ impl Scene {
         }
     }
 
-//    pub fn load<P: AsRef<Path>>(path: &P) -> Result<Self, Box<Error>> {
-//        unimplemented!()
-//    }
+    pub fn load<P: AsRef<Path>>(path: &P) -> Result<Self, Box<Error>> {
+        let file = File::open(path)?;
+        let value: serde_json::Value = serde_json::from_reader(file).unwrap();
+
+        let mut scene = Scene::new(Rgb([30, 30, 30]));
+
+        for model in value["scene"]["models"].as_array().unwrap() {
+            let geometry = &model["geometry"];
+            let geometry = match geometry["type"].as_str() {
+                Some("sphere") => {
+                    let sphere: Sphere = Deserialize::deserialize(geometry)?;
+                    Box::new(sphere) as Box<Geometry + Sync>
+                }
+                Some("plane") => {
+                    let plane: Plane = Deserialize::deserialize(geometry)?;
+                    Box::new(plane) as Box<Geometry + Sync>
+                }
+                Some(..) => {
+                    unimplemented!()
+                }
+                None => {
+                    unimplemented!()
+                }
+            };
+
+            let material = Deserialize::deserialize(&model["material"])?;
+
+            scene.objects.push(Model { geometry, material });
+        }
+
+        Ok(scene)
+    }
 
     pub fn trace(&self, ray: &Ray<f64>) -> Rgb<u8> {
         self.trace_limited(ray, self.depth)
@@ -235,18 +281,7 @@ fn main() {
 
     let viewport = Viewport { width: 1.0, height: 1.0 };
 
-    let mut scene = Scene::new(Rgb([30, 30, 30]));
-
-    scene.objects.push(Model {
-        geometry: Box::new(Plane {
-            point: Point::new(0.0, -1.0, 0.0),
-            normal: Vec3::new(0.0, 1.0, 0.0).unit(),
-        }),
-        material: Material {
-            color: Rgb([127, 127, 127]),
-            reflective: 0.0,
-        },
-    });
+    let mut scene = Scene::load(&"scene.json").unwrap();
 
 //    let mesh = Mesh::load("teapot.obj.txt").unwrap();
 //    for t in mesh.triangles {
@@ -259,54 +294,13 @@ fn main() {
 //        });
 //    }
 
-    scene.objects.push(Model {
-        geometry: Box::new(Sphere {
-            center: Point::new(0.0, 0.0, 10.0),
-            radius: 1.0,
-        }),
-        material: Material {
-            color: Rgb([255, 140, 0]),
-            reflective: 0.0,
-        },
-    });
-    scene.objects.push(Model {
-        geometry: Box::new(Sphere {
-            center: Point::new(0.0, -1.0, 3.0),
-            radius: 1.0,
-        }),
-        material: Material {
-            color: Rgb([255, 99, 71]),
-            reflective: 0.5,
-        },
-    });
-    scene.objects.push(Model {
-        geometry: Box::new(Sphere {
-            center: Point::new(2.0, 0.0, 4.0),
-            radius: 1.0,
-        }),
-        material: Material {
-            color: Rgb([85, 107, 47]),
-            reflective: 0.2,
-        },
-    });
-    scene.objects.push(Model {
-        geometry: Box::new(Sphere {
-            center: Point::new(-2.0, 0.0, 4.0),
-            radius: 1.0,
-        }),
-        material: Material {
-            color: Rgb([135, 206, 250]),
-            reflective: 0.9,
-        },
-    });
-
     let lights = 1;
     for id in 0..lights {
         let phi = 6.2830 * id as f64 / lights as f64;
         let radius = 0.5;
         scene.lights.push(Box::new(PointLight {
             intensity: 0.8 / lights as f64,
-            position: Vec3::new(-10.5, 5.0, -2.0) + Vec3::new(radius * phi.cos(), 0.0, radius * phi.sin()),
+            position: Vec3::new(10.5, 5.0, -2.0) + Vec3::new(radius * phi.cos(), 0.0, radius * phi.sin()),
         }));
     }
 
