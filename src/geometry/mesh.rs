@@ -6,9 +6,12 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use {Intersection, Material, Ray};
+use {Intersection, Ray};
 use geometry::Geometry;
+use matrix::Matrix4x4;
+use transform::Transform;
 use vec3::Vec3;
+use vec4::Vec4;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Triangle<T> {
@@ -78,6 +81,19 @@ impl Geometry for Triangle<f64> {
         } else {
             None
         }
+    }
+}
+
+impl Transform<f64> for Triangle<f64> {
+    fn transform(&mut self, transformation: &Matrix4x4<f64>) {
+        self.vertices[0] = (transformation * Vec4::from(self.vertices[0])).into();
+        self.vertices[1] = (transformation * Vec4::from(self.vertices[1])).into();
+        self.vertices[2] = (transformation * Vec4::from(self.vertices[2])).into();
+
+        let inverse = transformation.inverse();
+        self.normals[0] = Matrix4x4::transform_normal(&self.normals[0], inverse);
+        self.normals[1] = Matrix4x4::transform_normal(&self.normals[1], inverse);
+        self.normals[2] = Matrix4x4::transform_normal(&self.normals[2], inverse);
     }
 }
 
@@ -172,5 +188,13 @@ impl Geometry for Mesh {
         }
 
         closest
+    }
+}
+
+impl Transform<f64> for Mesh {
+    fn transform(&mut self, transformation: &Matrix4x4<f64>) {
+        for triangle in &mut self.triangles {
+            triangle.transform(transformation);
+        }
     }
 }

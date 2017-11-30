@@ -19,28 +19,21 @@ use serde::{Deserialize, Deserializer};
 
 use image::{ImageBuffer, ImageRgb8, Pixel, Rgb};
 
-type Point = Vec3<f64>;
-
 mod geometry;
+mod intersection;
+mod matrix;
 mod ray;
+mod transform;
 mod vec3;
+mod vec4;
 
-use geometry::{Geometry, Mesh, Model, Triangle};
+use geometry::{Geometry, Mesh, Model, Plane, Sphere};
+use matrix::Matrix4x4;
 use ray::Ray;
+use transform::Transform;
 use vec3::Vec3;
 
-#[derive(Copy, Clone, Debug)]
-pub struct Intersection {
-    t: f64,
-    point: Vec3<f64>,
-    normal: Vec3<f64>,
-}
-
-impl Intersection {
-    pub fn new(t: f64, point: Vec3<f64>, normal: Vec3<f64>) -> Self {
-        Self { t, point, normal }
-    }
-}
+pub use intersection::Intersection;
 
 fn deserialize_rgb<'de, D>(de: D) -> Result<Rgb<u8>, D::Error>
     where D: Deserializer<'de>
@@ -56,68 +49,6 @@ pub struct Material {
     #[serde(deserialize_with = "deserialize_rgb")]
     color: Rgb<u8>,
     reflective: f64,
-}
-
-///
-///
-/// A plane can be defined as a point representing how far the plane is from the world origin and a
-/// normal (defining the orientation of the plane).
-#[derive(Copy, Clone, Debug, Deserialize)]
-struct Plane {
-    point: Vec3<f64>,
-    normal: Vec3<f64>,
-}
-
-impl Geometry for Plane {
-    fn intersection(&self, ray: &Ray<f64>) -> Option<Intersection> {
-        let denominator = self.normal.dot(ray.direction());
-
-        if denominator.abs() >= 1e-6 {
-            let p0r0 = self.point - ray.origin();
-            let t = p0r0.dot(&self.normal) / denominator;
-            Some(Intersection::new(t, ray.origin() + ray.direction().scale(t), self.normal))
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-struct Sphere {
-    center: Point,
-    radius: f64,
-}
-
-impl Geometry for Sphere {
-    fn intersection(&self, ray: &Ray<f64>) -> Option<Intersection> {
-        let oc = ray.origin() - self.center;
-
-        let a = ray.direction().dot(ray.direction());
-        let b = 2.0 * oc.dot(ray.direction());
-        let c = oc.dot(&oc) - self.radius.powi(2);
-
-        let discriminant = b * b - 4.0 * a * c;
-        if discriminant < 0.0 {
-            return None
-        }
-
-        let sqrt = discriminant.sqrt();
-        let denominator = 2.0 * a;
-
-        let x1 = (-b + sqrt) / denominator;
-        let x2 = (-b - sqrt) / denominator;
-
-        let t = if x1 < x2 {
-            x1
-        } else {
-            x2
-        };
-
-        let intersection = ray.origin() + ray.direction().scale(t);
-        let normal = (intersection - self.center).unit();
-
-        return Some(Intersection::new(t, intersection, normal));
-    }
 }
 
 trait Light {
@@ -173,9 +104,14 @@ impl Scene {
 
         for model in value["scene"]["models"].as_array().unwrap() {
             let geometry = &model["geometry"];
+            let transform = &model["transform"];
             let geometry = match geometry["type"].as_str() {
                 Some("sphere") => {
-                    let sphere: Sphere = Deserialize::deserialize(geometry)?;
+                    let mut sphere: Sphere = Deserialize::deserialize(geometry)?;
+                    if !transform.is_null() {
+                        let transformation: Matrix4x4<f64> = Deserialize::deserialize(transform)?;
+                        sphere.transform(&transformation);
+                    }
                     Box::new(sphere) as Box<Geometry + Sync>
                 }
                 Some("plane") => {
@@ -183,7 +119,11 @@ impl Scene {
                     Box::new(plane) as Box<Geometry + Sync>
                 }
                 Some("mesh") => {
-                    let mesh = Mesh::load(geometry["path"].as_str().unwrap())?;
+                    let mut mesh = Mesh::load(geometry["path"].as_str().unwrap())?;
+                    if !transform.is_null() {
+                        let transformation: Matrix4x4<f64> = Deserialize::deserialize(transform)?;
+                        mesh.transform(&transformation);
+                    }
                     Box::new(mesh) as Box<Geometry + Sync>
                 }
                 Some(..) => {
@@ -280,8 +220,8 @@ struct Viewport {
 }
 
 fn main() {
-    let width = 1600;
-    let height = 1600;
+    let width = 1000;
+    let height = 1000;
 
     let viewport = Viewport { width: 1.0, height: 1.0 };
 
@@ -297,7 +237,7 @@ fn main() {
         }));
     }
 
-    let origin = Point::new(0.0, 0.0, -4.0);
+    let origin = Vec3::new(0.0, 0.0, -2.0);
 
     let now = SystemTime::now();
     println!("Start rendering ...");

@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use {Point, Vec3};
+use Vec3;
 
 #[derive(Debug)]
 pub struct Ray<T> {
