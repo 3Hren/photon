@@ -10,25 +10,27 @@ impl<T> Vec4<T> {
     pub fn new(x: T, y: T, z: T, w: T) -> Self {
         Vec4([x, y, z, w])
     }
+}
 
+impl<T: Copy> Vec4<T> {
     #[inline]
-    pub fn x(&self) -> &T {
-        self.index(0)
+    pub fn x(&self) -> T {
+        *self.index(0)
     }
 
     #[inline]
-    pub fn y(&self) -> &T {
-        self.index(1)
+    pub fn y(&self) -> T {
+        *self.index(1)
     }
 
     #[inline]
-    pub fn z(&self) -> &T {
-        self.index(2)
+    pub fn z(&self) -> T {
+        *self.index(2)
     }
 
     #[inline]
-    pub fn w(&self) -> &T {
-        self.index(3)
+    pub fn w(&self) -> T {
+        *self.index(3)
     }
 }
 
@@ -48,7 +50,7 @@ impl From<Vec3<f64>> for Vec4<f64> {
 
 impl Into<Vec3<f64>> for Vec4<f64> {
     fn into(self) -> Vec3<f64> {
-        Vec3::new(*self.x(), *self.y(), *self.z())
+        Vec3::new(self.x(), self.y(), self.z())
     }
 }
 

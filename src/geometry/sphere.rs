@@ -46,9 +46,6 @@ impl Geometry for Sphere {
 impl Transform<f64> for Sphere {
     fn transform(&mut self, transformation: &Matrix4x4<f64>) {
         let vec4 = Vec4::new(self.center.x, self.center.y, self.center.z, 1.0);
-        let vec4 = transformation * vec4;
-        self.center.x = *vec4.x();
-        self.center.y = *vec4.y();
-        self.center.z = *vec4.z();
+        self.center = (transformation * vec4).into();
     }
 }
