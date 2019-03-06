@@ -1,17 +1,14 @@
 //! Model that contains one or more triangles.
 
-use std::error::Error;
-use std::f64;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::{
+    error::Error,
+    f64,
+    fs::File,
+    io::{BufRead, BufReader},
+    path::Path,
+};
 
-use {Intersection, Ray};
-use geometry::Geometry;
-use matrix::Matrix4x4;
-use transform::Transform;
-use vec3::Vec3;
-use vec4::Vec4;
+use crate::{geometry::Geometry, matrix::Matrix4x4, transform::Transform, vec3::Vec3, vec4::Vec4, Intersection, Ray};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Triangle<T> {
@@ -49,20 +46,20 @@ impl Geometry for Triangle<f64> {
 
         // If determinant is near zero, ray lies in the plane of triangle.
         if determinant.abs() < f64::EPSILON {
-            return None
+            return None;
         }
 
         let inv_det = 1.0 / determinant;
         let s = ray.origin() - self.vertices[0];
         let beta = inv_det * s.dot(&p);
         if beta < 0.0 || beta > 1.0 {
-            return None
+            return None;
         }
 
         let q = s.cross(&e1);
         let gamma = inv_det * ray.direction().dot(&q);
         if gamma < 0.0 || beta + gamma > 1.0 {
-            return None
+            return None;
         }
 
         let t = inv_det * e2.dot(&q);
@@ -97,6 +94,7 @@ impl Transform<f64> for Triangle<f64> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Mesh {
     pub triangles: Vec<Triangle<f64>>,
 }
@@ -107,7 +105,7 @@ impl Mesh {
         let file = BufReader::new(file);
 
         let mut vertices: Vec<Vec3<f64>> = Vec::new();
-        let mut normals : Vec<Vec3<f64>> = Vec::new();
+        let mut normals: Vec<Vec3<f64>> = Vec::new();
         let mut triangles = Vec::new();
 
         for line in file.lines() {
@@ -117,50 +115,53 @@ impl Mesh {
                 continue;
             }
 
+            println!("{:?}", tokens.get(0));
             match tokens.get(0) {
                 // Vertexes.
-                Some(&"v") => {
-                    match (tokens.get(1), tokens.get(2), tokens.get(3)) {
-                        (Some(x), Some(y), Some(z)) => {
-                            vertices.push(Vec3::new(x.parse()?, y.parse()?, z.parse()?));
-                        }
-                        (..) => return Err("invalid `v` token".into()),
+                Some(&"v") => match (tokens.get(1), tokens.get(2), tokens.get(3)) {
+                    (Some(x), Some(y), Some(z)) => {
+                        vertices.push(Vec3::new(x.parse()?, y.parse()?, z.parse()?));
                     }
-                }
-                Some(&"vn") => {
-                    match (tokens.get(1), tokens.get(2), tokens.get(3)) {
-                        (Some(x), Some(y), Some(z)) => {
-                            normals.push(Vec3::new(x.parse()?, y.parse()?, z.parse()?));
-                        }
-                        (..) => return Err("invalid `vn` token".into()),
+                    (..) => return Err("invalid `v` token".into()),
+                },
+                Some(&"vn") => match (tokens.get(1), tokens.get(2), tokens.get(3)) {
+                    (Some(x), Some(y), Some(z)) => {
+                        normals.push(Vec3::new(x.parse()?, y.parse()?, z.parse()?));
                     }
-                }
+                    (..) => return Err("invalid `vn` token".into()),
+                },
                 // Faces
                 Some(&"f") => {
                     let tail = match tokens.split_first() {
                         Some((.., tail)) => tail,
-                        None => return Err("face syntax of `obj` not supported or malformed".into()),
+                        None => {
+                            return Err("face syntax of `obj` not supported or malformed".into());
+                        }
                     };
 
-                    let pairs: Vec<Vec<usize>> = tail.iter().map(|token| {
-                        let str_tokens: Vec<&str> = token.split('/').collect();
-                        str_tokens.iter().map(|str_tok| {
-                            match str_tok.parse::<usize>().ok() {
-                                Some(usize_tok) => usize_tok - 1, // Have to offset as OBJ is 1-indexed
-                                None => !0 // No data available/not supplied (eg. `//` as a token)
-                            }
-                        }).collect()
-                    }).collect();
+                    let pairs: Vec<Vec<usize>> = tail
+                        .iter()
+                        .map(|token| {
+                            let str_tokens: Vec<&str> = token.split('/').collect();
+                            str_tokens
+                                .iter()
+                                .map(|str_tok| {
+                                    match str_tok.parse::<usize>().ok() {
+                                        Some(usize_tok) => usize_tok - 1, // Have to offset as OBJ is 1-indexed
+                                        None => !0,                       // No data available/not supplied (eg. `//` as a token)
+                                    }
+                                })
+                                .collect()
+                        })
+                        .collect();
 
-                    triangles.push(Triangle::new([
-                        vertices[pairs[0][0]],
-                        vertices[pairs[1][0]],
-                        vertices[pairs[2][0]],
-                    ]).with_normals([
-                        normals[pairs[0][2]],
-                        normals[pairs[1][2]],
-                        normals[pairs[2][2]],
-                    ]));
+                    triangles.push(
+                        Triangle::new([vertices[pairs[0][0]], vertices[pairs[1][0]], vertices[pairs[2][0]]]).with_normals([
+                            normals[pairs[0][2]],
+                            normals[pairs[1][2]],
+                            normals[pairs[2][2]],
+                        ]),
+                    );
                 }
                 Some(..) => {}
                 None => {}

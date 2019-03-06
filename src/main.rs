@@ -1,23 +1,25 @@
 #![feature(range_contains)]
 
-extern crate image;
-extern crate rayon;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
 
 use std::error::Error;
 use std::f64;
 use std::fs::File;
 use std::path::Path;
-use std::time::SystemTime;
+use std::time::Instant;
 
 use rayon::prelude::*;
-
 use serde::{Deserialize, Deserializer};
-
 use image::{ImageBuffer, ImageRgb8, Pixel, Rgb};
+use sdl2::{event::Event, gfx::framerate::FPSManager, keyboard::Keycode, mouse::Cursor};
+
+use crate::geometry::{Geometry, Mesh, Model, Plane, Sphere};
+use crate::matrix::Matrix4x4;
+use crate::ray::Ray;
+use crate::transform::Transform;
+use crate::vec3::Vec3;
+pub use crate::intersection::Intersection;
 
 mod geometry;
 mod intersection;
@@ -27,16 +29,9 @@ mod transform;
 mod vec3;
 mod vec4;
 
-use geometry::{Geometry, Mesh, Model, Plane, Sphere};
-use matrix::Matrix4x4;
-use ray::Ray;
-use transform::Transform;
-use vec3::Vec3;
-
-pub use intersection::Intersection;
-
 fn deserialize_rgb<'de, D>(de: D) -> Result<Rgb<u8>, D::Error>
-    where D: Deserializer<'de>
+where
+    D: Deserializer<'de>,
 {
     let (r, g, b) = Deserialize::deserialize(de)?;
     let rgb = Rgb([r, g, b]);
@@ -91,7 +86,7 @@ impl Scene {
         Self {
             lights: Vec::new(),
             objects: Vec::new(),
-            depth: 1,
+            depth: 2,
             background,
         }
     }
@@ -126,12 +121,8 @@ impl Scene {
                     }
                     Box::new(mesh) as Box<Geometry + Sync>
                 }
-                Some(..) => {
-                    unimplemented!()
-                }
-                None => {
-                    unimplemented!()
-                }
+                Some(..) => unimplemented!(),
+                None => unimplemented!(),
             };
 
             let material = Deserialize::deserialize(&model["material"])?;
@@ -147,38 +138,43 @@ impl Scene {
     }
 
     fn trace_limited(&self, ray: &Ray<f64>, depth: u16) -> Rgb<u8> {
-        self.closest_intersection(ray).map(|(m, i)| {
-            let intensity = self.lightning(&i);
+        self.closest_intersection(ray)
+            .map(|(m, i)| {
+                let intensity = self.lightning(&i);
 
-            let reflective = m.material.reflective;
+                let reflective = m.material.reflective;
 
-            let color = m.material.color.map(|c| {
-                let color = c as f64 * intensity;
+                let color = m.material.color.map(|c| {
+                    let color = c as f64 * intensity;
 
-                if color > 255.0 {
-                    255
-                } else {
-                    color as u8
+                    if color > 255.0 {
+                        255
+                    } else {
+                        color as u8
+                    }
+                });
+
+                if depth <= 0 || reflective <= 0.0 {
+                    return color;
                 }
-            });
 
-            if depth <= 0 || reflective <= 0.0 {
-                return color;
-            }
+                let n = i.normal.unit();
+                let d = ray.direction().inverse();
 
-            let n = i.normal.unit();
-            let d = ray.direction().inverse();
+                let direction = n.scale(2.0 * n.dot(&d)) - d;
+                let ray = Ray::new(i.point, direction, 1.0e-6..1.0e20);
+                let reflected_color = self.trace_limited(&ray, depth - 1);
 
-            let direction = n.scale(2.0 * n.dot(&d)) - d;
-            let ray = Ray::new(i.point, direction, 1.0e-6..1.0e20);
-            let reflected_color = self.trace_limited(&ray, depth - 1);
+                let cr = color.map(|c| (c as f64 * (1.0 - reflective)) as u8);
+                let cl = reflected_color.map(|c| (c as f64 * reflective) as u8);
 
-            let cr = color.map(|c| (c as f64 * (1.0 - reflective)) as u8);
-            let cl = reflected_color.map(|c| (c as f64 * reflective) as u8);
-
-
-            Rgb([cr[0] + cl[0], cr[1] + cl[1], cr[2] + cl[2]])
-        }).unwrap_or(self.background)
+                Rgb([cr[0] + cl[0], cr[1] + cl[1], cr[2] + cl[2]])
+            })
+            .unwrap_or(Rgb([
+                self.background[0],
+                self.background[1],
+                self.background[2],
+            ]))
     }
 
     fn closest_intersection(&self, ray: &Ray<f64>) -> Option<(&Model<Box<Geometry + Sync>>, Intersection)> {
@@ -204,7 +200,7 @@ impl Scene {
             let direction = light.pos() - intersection.point;
             let ray = Ray::new(intersection.point, direction, 1.0e-6..1.0e20);
             if self.closest_intersection(&ray).is_some() {
-                continue
+                continue;
             }
 
             intensity += light.intensity(&intersection);
@@ -219,11 +215,14 @@ struct Viewport {
     height: f64,
 }
 
-fn main() {
-    let width = 1000;
-    let height = 1000;
+fn main() -> Result<(), Box<dyn Error>> {
+    let width = 800;
+    let height = 800;
 
-    let viewport = Viewport { width: 1.0, height: 1.0 };
+    let viewport = Viewport {
+        width: 1.0,
+        height: 1.0,
+    };
 
     let mut scene = Scene::load(&"scene.json").unwrap();
 
@@ -232,45 +231,134 @@ fn main() {
         let phi = 6.2830 * id as f64 / lights as f64;
         let radius = 0.5;
         scene.lights.push(Box::new(PointLight {
-            intensity: 0.8 / lights as f64,
-            position: Vec3::new(10.5, 5.0, -2.0) + Vec3::new(radius * phi.cos(), 0.0, radius * phi.sin()),
+            intensity: 1.0 / lights as f64,
+            position: Vec3::new(10.5, 5.0, -2.0)
+                + Vec3::new(radius * phi.cos(), 0.0, radius * phi.sin()),
         }));
     }
 
-    let origin = Vec3::new(0.0, 0.0, -2.0);
+    let mut origin = Vec3::new(0.0, 0.0, -2.0);
 
-    let now = SystemTime::now();
-    println!("Start rendering ...");
-    println!("  - models: {}", scene.objects.len());
-    println!("  - lights: {}", scene.lights.len());
+    let ctx = sdl2::init()?;
+    let video = ctx.video()?;
+    let window = video.window("Photon", width, height).position_centered().opengl().build()?;
+    ctx.mouse().show_cursor(false);
 
-    let pixels: Vec<Rgb<u8>> = (0..width * height).into_par_iter().map(|n| {
-        let x = n % width;
-        let y = n / width;
+    let mut canvas = window.into_canvas().accelerated().present_vsync().target_texture().build()?;
+    let texture_creator = canvas.texture_creator();
+    canvas.clear();
 
-        let sx = x as f64 + width as f64 / -2.0;
-        let sy = height as f64 / 2.0 - y as f64;
+    let mut fps = FPSManager::new();
+    fps.set_framerate(25)?;
 
-        let vx = sx * viewport.width / width as f64;
-        let vy = sy * viewport.height / height as f64;
-        let vz = 1.0;
+    let mut transformation = Matrix4x4::identity();
 
-        let ray = Ray::new(origin, Vec3::new(vx, vy, vz), 1.0..1.0e20);
+    let mut a = 0.0f64;
+    let mut b = 0.0f64;
 
-        let color = scene.trace(&ray);
+    let mut events = ctx.event_pump()?;
+    let mut texture = texture_creator.create_texture_streaming(None, width, height)?;
+    'mainloop: loop {
+        const SPEED: f64 = 0.05;
+        for event in events.poll_iter() {
+            match event {
+                Event::Quit { .. }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Q), ..
+                } => break 'mainloop,
+                Event::KeyDown {
+                    keycode: Some(Keycode::W), ..
+                } => {
+                    origin.z += SPEED;
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::A), ..
+                } => {
+                    origin.x -= SPEED;
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::S), ..
+                } => {
+                    origin.z -= SPEED;
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::D), ..
+                } => {
+                    origin.x += SPEED;
+                }
+                Event::MouseMotion {
+                    xrel, yrel, ..
+                } => {
+                    a += (-yrel as f64) / 100.0;
+                    b += (xrel as f64) / 100.0;
 
-        color
-    }).collect();
+                    let rot_x = Matrix4x4::new([
+                        [1.0,  0.0,  0.0, 0.0],
+                        [0.0,  a.cos(),  a.sin(), 0.0],
+                        [0.0, -a.sin(), a.cos(), 0.0],
+                        [0.0,  0.0,  0.0, 1.0],
+                    ]);
 
+                    let rot_y = Matrix4x4::new([
+                        [b.cos(),  0.0, b.sin(), 0.0],
+                        [0.0,         1.0, 0.0,        0.0],
+                        [-b.sin(), 0.0, b.cos(), 0.0],
+                        [0.0,         0.0, 0.0,        1.0],
+                    ]);
 
-    let mut buf = ImageBuffer::new(width, height);
-    for (x, y, pixel) in buf.enumerate_pixels_mut() {
-        *pixel = pixels[(y * width + x) as usize];
-    };
+                    let rot_z = Matrix4x4::new([
+                        [b.cos(), -b.sin(), 0.0, 0.0],
+                        [b.sin(), b.cos(),  0.0, 0.0],
+                        [0.0,        0.0,         1.0, 0.0],
+                        [0.0,        0.0,         0.0, 1.0],
+                    ]);
 
-    let elapsed = now.elapsed().unwrap();
-    println!("Finished, elapsed: {:.3} ms", (elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 * 1e-9) * 1e3);
-    let file = &mut File::create("photon.png").unwrap();
+                    transformation = rot_y * rot_x;
+                }
+                _event => {}
+            }
+        }
 
-    ImageRgb8(buf).save(file, image::PNG).unwrap();
+        println!("Start drawing ...");
+        let now = Instant::now();
+
+        texture.with_lock(None, |buf, _pitch| {
+            buf.par_chunks_mut(4).enumerate().for_each(|(n, mut c)| {
+                let x = n % (width as usize);
+                let y = n / (width as usize);
+
+                let sx = x as f64 + width as f64 / -2.0;
+                let sy = height as f64 / 2.0 - y as f64;
+
+                let vx = sx * viewport.width / width as f64;
+                let vy = sy * viewport.height / height as f64;
+                let vz = 1.0;
+
+                let v = Vec3::new(vx, vy, vz);
+
+                let mut ray = Ray::new(origin, v, 1.0..1.0e20);
+                ray.transform(&transformation);
+
+                let color = scene.trace(&ray);
+
+                c[0] = color[2];
+                c[1] = color[1];
+                c[2] = color[0];
+                c[3] = 0;
+            });
+        })?;
+
+        canvas.clear();
+        canvas.copy(&texture, None, None)?;
+
+        let elapsed = now.elapsed();
+        println!("Finished, elapsed: {:.3} ms", elapsed.as_millis() as f64);
+        canvas.present();
+    }
+
+    Ok(())
 }

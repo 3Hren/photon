@@ -1,9 +1,4 @@
-use {Intersection, Ray};
-use geometry::Geometry;
-use matrix::Matrix4x4;
-use transform::Transform;
-use vec3::Vec3;
-use vec4::Vec4;
+use crate::{geometry::Geometry, matrix::Matrix4x4, transform::Transform, vec3::Vec3, vec4::Vec4, Intersection, Ray};
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub struct Sphere {
@@ -21,7 +16,7 @@ impl Geometry for Sphere {
 
         let discriminant = b * b - 4.0 * a * c;
         if discriminant < 0.0 {
-            return None
+            return None;
         }
 
         let sqrt = discriminant.sqrt();
@@ -30,11 +25,7 @@ impl Geometry for Sphere {
         let x1 = (-b + sqrt) / denominator;
         let x2 = (-b - sqrt) / denominator;
 
-        let t = if x1 < x2 {
-            x1
-        } else {
-            x2
-        };
+        let t = if x1 < x2 { x1 } else { x2 };
 
         let intersection = ray.offset(t);
         let normal = (intersection - self.center).unit();

@@ -1,6 +1,6 @@
-use std::ops::{Add, Index};
+use std::ops::{Add, Index, IndexMut};
 
-use vec3::Vec3;
+use crate::vec3::Vec3;
 
 #[derive(Copy, Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct Vec4<T>([T; 4]);
@@ -67,5 +67,12 @@ impl<T> Index<usize> for Vec4<T> {
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
         &self.0[index]
+    }
+}
+
+impl<T> IndexMut<usize> for Vec4<T> {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
     }
 }

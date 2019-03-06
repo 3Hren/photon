@@ -25,6 +25,44 @@
                 "geometry": {
                     "type": "sphere",
                     "center": [
+                        -2.0,
+                        0.0,
+                        0.0
+                    ],
+                    "radius": 0.4
+                },
+                "material": {
+                    "color": [
+                        12,
+                        140,
+                        155
+                    ],
+                    "reflective": 0.75
+                }
+            },
+            {
+                "geometry": {
+                    "type": "sphere",
+                    "center": [
+                        2.0,
+                        0.0,
+                        0.0
+                    ],
+                    "radius": 0.2
+                },
+                "material": {
+                    "color": [
+                        155,
+                        140,
+                        12
+                    ],
+                    "reflective": 0.7
+                }
+            },
+            {
+                "geometry": {
+                    "type": "sphere",
+                    "center": [
                         2.0,
                         0.0,
                         4.0
@@ -79,28 +117,8 @@
                         127,
                         127
                     ],
-                    "reflective": 0.0
+                    "reflective": 0.3
                 }
-            },
-            {
-                "geometry": {
-                    "type": "mesh",
-                    "path": "teapot.obj.txt"
-                },
-                "material": {
-                    "color": [
-                        255,
-                        99,
-                        71
-                    ],
-                    "reflective": 0.5
-                },
-                "transform": [
-                    [1.2, 0.0, 0.0, 0.0 ],
-                    [0.0, 1.2, 0.0, -1.0],
-                    [0.0, 0.0, 1.2, 3.0 ],
-                    [0.0, 0.0, 0.0, 1.0 ]
-                ]
             }
         ]
     }

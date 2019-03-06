@@ -1,7 +1,6 @@
-use std::ops::{Add, Mul};
+use std::ops::{Add, AddAssign, Mul};
 
-use vec3::Vec3;
-use vec4::Vec4;
+use crate::{vec3::Vec3, vec4::Vec4};
 
 ///
 /// Index notation is: i, j - row, column.
@@ -10,23 +9,13 @@ pub struct Matrix4x4<T>([Vec4<T>; 4]);
 
 impl<T: Copy> Matrix4x4<T> {
     pub fn new(v: [[T; 4]; 4]) -> Self {
-        Matrix4x4([
-            Vec4::from(v[0]),
-            Vec4::from(v[1]),
-            Vec4::from(v[2]),
-            Vec4::from(v[3]),
-        ])
+        Matrix4x4([Vec4::from(v[0]), Vec4::from(v[1]), Vec4::from(v[2]), Vec4::from(v[3])])
     }
 }
 
 impl Matrix4x4<f64> {
     pub fn identity() -> Self {
-        Matrix4x4::new([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
+        Matrix4x4::new([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
     }
 }
 
@@ -84,7 +73,7 @@ impl Matrix4x4<f64> {
         Vec3 {
             x: inv.0[0][0] * n.x + inv.0[1][0] * n.y + inv.0[2][0] * n.z,
             y: inv.0[0][1] * n.x + inv.0[1][1] * n.y + inv.0[2][1] * n.z,
-            z: inv.0[0][2] * n.x + inv.0[1][2] * n.y + inv.0[2][2] * n.z
+            z: inv.0[0][2] * n.x + inv.0[1][2] * n.y + inv.0[2][2] * n.z,
         }
     }
 }
@@ -102,14 +91,28 @@ impl<'a, T: Copy + Add<Output = T> + Mul<Output = T>> Mul<Vec4<T>> for &'a Matri
     }
 }
 
+impl Mul<Matrix4x4<f64>> for Matrix4x4<f64> {
+    type Output = Matrix4x4<f64>;
+
+    fn mul(self, o: Matrix4x4<f64>) -> Self::Output {
+        let mut out = Matrix4x4::<f64>::default();
+
+        for i in 0..4 {
+            for j in 0..4 {
+                for k in 0..4 {
+                    let mut v = out.0[i][j] + self.0[i][k] * o.0[k][j];
+                    out.0[i][j] = v;
+                }
+            }
+        }
+
+        out
+    }
+}
+
 #[test]
 fn mul_matrix_vec() {
-    let matrix = &Matrix4x4::new([
-        [1, 0, 0, 10],
-        [0, 1, 0, 0 ],
-        [0, 0, 1, 0 ],
-        [0, 0, 0, 1 ],
-    ]);
+    let matrix = &Matrix4x4::new([[1, 0, 0, 10], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]);
     let vec = Vec4::new(10, 10, 10, 1);
 
     assert_eq!(Vec4::new(20, 10, 10, 1), matrix * vec);
